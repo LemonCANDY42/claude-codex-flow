@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Keep the opus-codex-flow block in the global CLAUDE.md (<CLAUDE_CONFIG_DIR or ~/.claude>/CLAUDE.md).
 
-sync    (default; the SessionStart hook runs it) refresh the block if it is there; add it once
-        on first run; never re-add it after it was removed.
-add     add or refresh the block now, even after a removal.
-remove  delete the block and keep it from coming back.
+sync    (default; the SessionStart hook runs it) refresh the block only if it is already there;
+        never adds it (opt-in: use add or ocf-toggle on).
+add     add or refresh the block now.
+remove  delete the block.
 OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 stops sync from touching the file.
 
 The block sits between a begin line and an end line. If those lines are missing, duplicated or
@@ -18,7 +18,7 @@ import shutil
 import sys
 import tempfile
 
-BEGIN = "<!-- opus-codex-flow:begin (managed by the opus-codex-flow plugin; /opus-codex-flow uninstall removes it) -->"
+BEGIN = "<!-- opus-codex-flow:begin (managed by the opus-codex-flow plugin; ocf-toggle off removes it) -->"
 END = "<!-- opus-codex-flow:end -->"
 BEGIN_RE = re.compile(r"^<!-- opus-codex-flow:begin\b.*-->[ \t\r]*$", re.M)
 END_RE = re.compile(r"^<!-- opus-codex-flow:end -->[ \t\r]*$", re.M)
@@ -52,7 +52,6 @@ def main():
     hook = action == "sync"
     config = os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
     target = os.path.realpath(os.path.join(config, "CLAUDE.md"))
-    state = os.path.join(config, "opus-codex-flow", ".claude-md-offered")
     if not os.path.isdir(os.path.dirname(target)):
         return
 
@@ -71,8 +70,8 @@ def main():
         new = new.rstrip("\r\n") + nl if new.strip() else ""
     elif found:
         new = text[: found[0]] + block + text[found[1]:]
-    elif action == "sync" and os.path.exists(state):
-        return  # offered before and since removed: respect that
+    elif action == "sync":
+        return  # opt-in: the hook only refreshes a block the user asked for
     else:
         new = text + (nl if text and not text.endswith(nl + nl) else "") + block
 
@@ -89,9 +88,7 @@ def main():
         os.replace(tmp, target)
         verb = "removed the delegation block from" if action == "remove" else ("updated" if found else "added") + " the delegation block in"
         say(f"opus-codex-flow {verb} {target}. Text between its markers is managed by the plugin; "
-            "/opus-codex-flow uninstall removes it; OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 stops updates.", hook)
-    os.makedirs(os.path.dirname(state), exist_ok=True)
-    open(state, "a").close()
+            "ocf-toggle off removes it; OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 stops updates.", hook)
 
 
 if __name__ == "__main__":

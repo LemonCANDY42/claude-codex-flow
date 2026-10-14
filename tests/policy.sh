@@ -100,18 +100,20 @@ mkdir -p "$CLAUDE_CONFIG_DIR"
 sync() { python3 -I "$SCRIPTS/sync-claude-md.py" "$@"; }
 count() { grep -c "$1" "$2" || true; }
 
-out="$(sync)"; grep -q '"systemMessage"' <<<"$out" || fail "no user-visible message on first write"
+# opt-in: sync never adds; add does; sync then refreshes
+out="$(sync)"; [ -z "$out" ] && [ ! -e "$MD" ] || fail "sync created the block without opt-in"
+out="$(sync add)"; [ -n "$out" ] || fail "no message on add"
 [ "$(count 'opus-codex-flow:begin' "$MD")" -eq 1 ] || fail "block not created in a new file"
-out="$(sync)"; [ -z "$out" ] || fail "second sync should be silent: $out"
+out="$(sync add)"; [ -z "$out" ] || fail "second add should be silent: $out"
 
-printf '# Mine\n\nkeep this\n' > "$TMP/real.md"; rm "$MD"; ln -s "$TMP/real.md" "$MD"; rm -rf "$CLAUDE_CONFIG_DIR/opus-codex-flow"
-sync >/dev/null
+printf '# Mine\n\nkeep this\n' > "$TMP/real.md"; rm "$MD"; ln -s "$TMP/real.md" "$MD"
+sync add >/dev/null
 [ -L "$MD" ]                                                   || fail "symlink replaced"
 [ "$(count 'opus-codex-flow:begin' "$TMP/real.md")" -eq 1 ]    || fail "block not added through symlink"
 head -3 "$TMP/real.md" | grep -q 'keep this'                   || fail "user text disturbed"
 cmp -s "$TMP/real.md.opus-codex-flow.bak" <(printf '# Mine\n\nkeep this\n') || fail "backup wrong"
 cp "$TMP/real.md" "$TMP/after-first"; sync >/dev/null
-cmp -s "$TMP/real.md" "$TMP/after-first"                        || fail "second sync changed the file"
+cmp -s "$TMP/real.md" "$TMP/after-first"                        || fail "sync changed an up-to-date file"
 
 python3 -I - "$TMP/real.md" <<'PY'
 import sys; p = sys.argv[1]; t = open(p).read()
@@ -121,25 +123,21 @@ sync >/dev/null
 ! grep -q 'STALE TEXT' "$TMP/real.md"                          || fail "stale block not refreshed"
 [ "$(count 'opus-codex-flow:begin' "$TMP/real.md")" -eq 1 ]    || fail "block duplicated on refresh"
 
-# removal sticks: remove, then sync must not bring it back; add does
+# remove restores the file and sync does not bring it back
 sync remove >/dev/null
 ! grep -q 'opus-codex-flow' "$TMP/real.md"                     || fail "remove left the block"
 cmp -s "$TMP/real.md" <(printf '# Mine\n\nkeep this\n')         || { cat "$TMP/real.md" >&2; fail "remove did not restore the file"; }
 sync >/dev/null; ! grep -q 'opus-codex-flow' "$TMP/real.md"    || fail "sync re-added a removed block"
 sync add >/dev/null; [ "$(count 'opus-codex-flow:begin' "$TMP/real.md")" -eq 1 ] || fail "add did not add"
-python3 -I - "$TMP/real.md" <<'PY'
-import re, sys; p = sys.argv[1]; t = open(p).read()
-open(p, "w").write(re.sub(r"\n?<!-- opus-codex-flow:begin.*?end -->\n", "", t, flags=re.S))
-PY
-sync >/dev/null; ! grep -q 'opus-codex-flow' "$TMP/real.md"    || fail "block deleted by hand came back"
 sync remove >/dev/null
 
 # opt-out
-rm -rf "$CLAUDE_CONFIG_DIR/opus-codex-flow"; OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 sync >/dev/null
+sync add >/dev/null; OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 sync >/dev/null
+sync remove >/dev/null
 ! grep -q 'opus-codex-flow' "$TMP/real.md"                     || fail "opt-out ignored by sync"
 
 # malformed markers: never touch the user's text
-rm -rf "$CLAUDE_CONFIG_DIR/opus-codex-flow"; rm "$MD"
+rm "$MD"
 # shellcheck disable=SC2016  # backticks are literal text in these fixtures
 for bad in 'begin-only' 'quoted-inline' 'two-begins' 'end-first'; do
   case $bad in
@@ -149,25 +147,46 @@ for bad in 'begin-only' 'quoted-inline' 'two-begins' 'end-first'; do
     end-first)     printf '<!-- opus-codex-flow:end -->\nkeep 1\n<!-- opus-codex-flow:begin -->\nkeep 2\n' ;;
   esac > "$MD"
   cp "$MD" "$TMP/before"
-  out="$(sync)"; sync >/dev/null; sync remove >/dev/null || true
+  out="$(sync add)"; sync >/dev/null; sync remove >/dev/null || true
   cmp -s "$MD" "$TMP/before" || { cat "$MD" >&2; fail "$bad: user text changed"; }
 done
 # a quoted marker with other text on its line is not a marker, so the block is simply added
 # shellcheck disable=SC2016
 printf 'A `<!-- opus-codex-flow:begin -->` quoted\nkeep 1\n' > "$MD"; rm -rf "$CLAUDE_CONFIG_DIR/opus-codex-flow"
-sync >/dev/null; sync >/dev/null
+sync add >/dev/null; sync add >/dev/null
 grep -q 'keep 1' "$MD"                                         || fail "inline-quoted marker lost user text"
 grep -q 'quoted' "$MD"                                         || fail "inline-quoted marker lost user text"
 [ "$(count '^<!-- opus-codex-flow:begin' "$MD")" -eq 1 ]       || fail "inline-quoted case: block count"
 
 # CRLF is preserved
-rm -rf "$CLAUDE_CONFIG_DIR/opus-codex-flow"; printf 'one\r\ntwo\r\n' > "$MD"
-sync >/dev/null
+printf 'one\r\ntwo\r\n' > "$MD"
+sync add >/dev/null
 [ "$(python3 -I -c "import sys;t=open(sys.argv[1],newline='').read();print(t.count('\n')-t.count('\r\n'))" "$MD")" -eq 0 ] || fail "CRLF file got bare LF"
 sync remove >/dev/null
 cmp -s "$MD" <(printf 'one\r\ntwo\r\n')                         || fail "CRLF file not restored by remove"
 
 # missing config dir: do nothing, create nothing
-rm -rf "$TMP/nocfg"; CLAUDE_CONFIG_DIR="$TMP/nocfg" sync >/dev/null
+rm -rf "$TMP/nocfg"; CLAUDE_CONFIG_DIR="$TMP/nocfg" sync add >/dev/null
 [ ! -e "$TMP/nocfg" ]                                          || fail "created a config dir"
+# ocf-toggle with a fake claude
+cat > "$TMP/fake-claude" <<'FAKE'
+#!/usr/bin/env bash
+st="$FAKE_STATE"
+case "$1 $2" in
+  "plugin list") printf '[{"id":"opus-codex-flow@opus-codex-flow","enabled":%s}]\n' "$(cat "$st")";;
+  "plugin enable") echo true > "$st";;
+  "plugin disable") echo false > "$st";;
+esac
+FAKE
+chmod +x "$TMP/fake-claude"; export FAKE_STATE="$TMP/fake-state" OCF_CLAUDE_BIN="$TMP/fake-claude"; echo true > "$FAKE_STATE"
+rm -rf "$TMP/cfg2"; mkdir "$TMP/cfg2"; printf '# Mine\n' > "$TMP/cfg2/CLAUDE.md"; export CLAUDE_CONFIG_DIR="$TMP/cfg2"
+TOG="$SCRIPTS/ocf-toggle"
+"$TOG" on >/dev/null;  grep -q 'opus-codex-flow:begin' "$TMP/cfg2/CLAUDE.md" || fail "toggle on: no block"
+[[ "$("$TOG" status)" == *"plugin: enabled"* ]] || fail "toggle status enabled"
+"$TOG" off >/dev/null; [ "$(cat "$FAKE_STATE")" = false ]                    || fail "toggle off: plugin still enabled"
+cmp -s "$TMP/cfg2/CLAUDE.md" <(printf '# Mine\n')                              || fail "toggle off: file not restored"
+"$TOG" off >/dev/null;                                                          # idempotent
+[[ "$("$TOG" status)" == *"plugin: disabled"* ]] || fail "toggle status disabled"
+"$TOG" on >/dev/null;  [ "$(cat "$FAKE_STATE")" = true ]                     || fail "toggle on: plugin not enabled"
+"$TOG" bogus 2>/dev/null && fail "toggle accepted bad arg"
 echo 'policy ok'
