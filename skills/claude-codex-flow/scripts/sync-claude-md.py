@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Keep the opus-codex-flow block in the global CLAUDE.md (<CLAUDE_CONFIG_DIR or ~/.claude>/CLAUDE.md).
+"""Keep the claude-codex-flow block in the global CLAUDE.md (<CLAUDE_CONFIG_DIR or ~/.claude>/CLAUDE.md).
 
 sync    (default; the SessionStart hook runs it) refresh the block only if it is already there;
         never adds it (opt-in: use add or ocf-toggle on).
 add     add or refresh the block now.
 remove  delete the block.
-OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 stops sync from touching the file.
+CLAUDE_CODEX_FLOW_NO_CLAUDE_MD=1 stops sync from touching the file.
 
 The block sits between a begin line and an end line. If those lines are missing, duplicated or
 out of order the file is left alone. Hook stdout reaches the session, so sync prints one JSON
@@ -18,10 +18,11 @@ import shutil
 import sys
 import tempfile
 
-BEGIN = "<!-- opus-codex-flow:begin (managed by the opus-codex-flow plugin; ocf-toggle off removes it) -->"
-END = "<!-- opus-codex-flow:end -->"
-BEGIN_RE = re.compile(r"^<!-- opus-codex-flow:begin\b.*-->[ \t\r]*$", re.M)
-END_RE = re.compile(r"^<!-- opus-codex-flow:end -->[ \t\r]*$", re.M)
+BEGIN = "<!-- claude-codex-flow:begin (managed by the claude-codex-flow plugin; ocf-toggle off removes it) -->"
+END = "<!-- claude-codex-flow:end -->"
+# opus-codex-flow is the plugin's former name: blocks written under it are migrated, not duplicated
+BEGIN_RE = re.compile(r"^<!-- (?:claude|opus)-codex-flow:begin\b.*-->[ \t\r]*$", re.M)
+END_RE = re.compile(r"^<!-- (?:claude|opus)-codex-flow:end -->[ \t\r]*$", re.M)
 
 
 def say(message, as_json):
@@ -34,7 +35,7 @@ def region(text):
     if not begins and not ends:
         return None
     if len(begins) != 1 or len(ends) != 1 or begins[0].start() > ends[0].start():
-        raise ValueError("opus-codex-flow markers in CLAUDE.md are missing, duplicated or out of order")
+        raise ValueError("claude-codex-flow markers in CLAUDE.md are missing, duplicated or out of order")
     end = ends[0].end()
     if text.startswith("\r\n", end):
         end += 2
@@ -47,7 +48,7 @@ def main():
     action = sys.argv[1] if len(sys.argv) > 1 else "sync"
     if action not in ("sync", "add", "remove"):
         sys.exit("usage: sync-claude-md.py [sync|add|remove]")
-    if action == "sync" and os.environ.get("OPUS_CODEX_FLOW_NO_CLAUDE_MD") == "1":
+    if action == "sync" and "1" in (os.environ.get("CLAUDE_CODEX_FLOW_NO_CLAUDE_MD"), os.environ.get("OPUS_CODEX_FLOW_NO_CLAUDE_MD")):
         return
     hook = action == "sync"
     config = os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
@@ -77,7 +78,7 @@ def main():
 
     if new != text:
         if text:
-            backup = target + ".opus-codex-flow.bak"
+            backup = target + ".claude-codex-flow.bak"
             if not os.path.exists(backup):
                 shutil.copy2(target, backup)
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".CLAUDE.md.")
@@ -87,12 +88,12 @@ def main():
             shutil.copymode(target, tmp)
         os.replace(tmp, target)
         verb = "removed the delegation block from" if action == "remove" else ("updated" if found else "added") + " the delegation block in"
-        say(f"opus-codex-flow {verb} {target}. Text between its markers is managed by the plugin; "
-            "ocf-toggle off removes it; OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 stops updates.", hook)
+        say(f"claude-codex-flow {verb} {target}. Text between its markers is managed by the plugin; "
+            "ocf-toggle off removes it; CLAUDE_CODEX_FLOW_NO_CLAUDE_MD=1 stops updates.", hook)
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # a hook must never break the session
-        say(f"opus-codex-flow: CLAUDE.md sync skipped: {e}", True)
+        say(f"claude-codex-flow: CLAUDE.md sync skipped: {e}", True)

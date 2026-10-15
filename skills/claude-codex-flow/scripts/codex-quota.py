@@ -16,8 +16,8 @@ Tier limits (floor = minimum remaining %, MAX_AHEAD = points ahead of pace):
   pro: floor 40, MAX_AHEAD 10     plus/team/business/enterprise/edu/prolite: floor 60, MAX_AHEAD 5
 End of window: in the last quarter, headroom that is about to expire counts for more. When
 usage is at least 10 points behind pace, the floor drops to 15.
-Override the tier's floor and MAX_AHEAD with OPUS_CODEX_FLOW_MIN_REMAINING and
-OPUS_CODEX_FLOW_MAX_AHEAD (percent points).
+Override the tier's floor and MAX_AHEAD with CLAUDE_CODEX_FLOW_MIN_REMAINING and
+CLAUDE_CODEX_FLOW_MAX_AHEAD (percent points).
 """
 import json
 import os
@@ -92,8 +92,8 @@ def assess(entry):
         floor, max_ahead = OTHER_PAID_LIMITS
     else:
         verdict("unknown", "unrecognised subscription tier", facts)
-    floor = float(os.environ.get("OPUS_CODEX_FLOW_MIN_REMAINING", str(floor)))
-    max_ahead = float(os.environ.get("OPUS_CODEX_FLOW_MAX_AHEAD", str(max_ahead)))
+    floor = float(os.environ.get("CLAUDE_CODEX_FLOW_MIN_REMAINING", os.environ.get("OPUS_CODEX_FLOW_MIN_REMAINING", str(floor))))
+    max_ahead = float(os.environ.get("CLAUDE_CODEX_FLOW_MAX_AHEAD", os.environ.get("OPUS_CODEX_FLOW_MAX_AHEAD", str(max_ahead))))
 
     short = usage.get("primary")
     if short and float(short.get("usedPercent", 0)) >= 80:

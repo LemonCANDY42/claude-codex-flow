@@ -2,7 +2,7 @@
 # Tests for codex-quota.py (fake `codexbar`) and sync-claude-md.py (temp config dir). No network.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPTS="$ROOT/skills/opus-codex-flow/scripts"
+SCRIPTS="$ROOT/skills/claude-codex-flow/scripts"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -60,8 +60,8 @@ export FAKE_TIER=free FAKE_USED=0  FAKE_ELAPSED=50; expect tight "free never amp
 export FAKE_TIER=mystery FAKE_USED=0 FAKE_ELAPSED=50; expect unknown "unrecognised tier"
 export FAKE_TIER=pro FAKE_USED=7 FAKE_ELAPSED=14 FAKE_PRIMARY=85; expect tight "short window nearly spent"
 unset FAKE_PRIMARY
-FAKE_USED=65 FAKE_ELAPSED=60 OPUS_CODEX_FLOW_MIN_REMAINING=30 expect ample "env override"
-FAKE_USED=65 FAKE_ELAPSED=60 OPUS_CODEX_FLOW_MIN_REMAINING=oops expect unknown "bad env override"
+FAKE_USED=65 FAKE_ELAPSED=60 CLAUDE_CODEX_FLOW_MIN_REMAINING=30 expect ample "env override"
+FAKE_USED=65 FAKE_ELAPSED=60 CLAUDE_CODEX_FLOW_MIN_REMAINING=oops expect unknown "bad env override"
 
 # end of window: expiring headroom lowers the floor; mid-week with the same remaining share stays tight
 export FAKE_TIER=pro
@@ -92,7 +92,7 @@ for want in '^name: digest$' '^model: haiku$' '^effort: low$' '^tools: .*Read'; 
   grep -Eq "$want" "$AGENT" || fail "digest agent lacks $want"
 done
 ! grep -Eq '^tools: .*(Write|Edit)' "$AGENT" || fail "digest agent has edit tools"
-grep -q 'QUOTA: ample' "$ROOT/skills/opus-codex-flow/claude-md-block.md" || fail "block does not tie Codex to the quota check"
+grep -q 'QUOTA: ample' "$ROOT/skills/claude-codex-flow/claude-md-block.md" || fail "block does not tie Codex to the quota check"
 
 # sync-claude-md.py (CLAUDE_CONFIG_DIR points at a temp dir)
 export CLAUDE_CONFIG_DIR="$TMP/cfg"; MD="$CLAUDE_CONFIG_DIR/CLAUDE.md"
@@ -103,15 +103,15 @@ count() { grep -c "$1" "$2" || true; }
 # opt-in: sync never adds; add does; sync then refreshes
 out="$(sync)"; [ -z "$out" ] && [ ! -e "$MD" ] || fail "sync created the block without opt-in"
 out="$(sync add)"; [ -n "$out" ] || fail "no message on add"
-[ "$(count 'opus-codex-flow:begin' "$MD")" -eq 1 ] || fail "block not created in a new file"
+[ "$(count 'claude-codex-flow:begin' "$MD")" -eq 1 ] || fail "block not created in a new file"
 out="$(sync add)"; [ -z "$out" ] || fail "second add should be silent: $out"
 
 printf '# Mine\n\nkeep this\n' > "$TMP/real.md"; rm "$MD"; ln -s "$TMP/real.md" "$MD"
 sync add >/dev/null
 [ -L "$MD" ]                                                   || fail "symlink replaced"
-[ "$(count 'opus-codex-flow:begin' "$TMP/real.md")" -eq 1 ]    || fail "block not added through symlink"
+[ "$(count 'claude-codex-flow:begin' "$TMP/real.md")" -eq 1 ]    || fail "block not added through symlink"
 head -3 "$TMP/real.md" | grep -q 'keep this'                   || fail "user text disturbed"
-cmp -s "$TMP/real.md.opus-codex-flow.bak" <(printf '# Mine\n\nkeep this\n') || fail "backup wrong"
+cmp -s "$TMP/real.md.claude-codex-flow.bak" <(printf '# Mine\n\nkeep this\n') || fail "backup wrong"
 cp "$TMP/real.md" "$TMP/after-first"; sync >/dev/null
 cmp -s "$TMP/real.md" "$TMP/after-first"                        || fail "sync changed an up-to-date file"
 
@@ -121,30 +121,39 @@ open(p, "w").write(t.replace("Applies only while", "STALE TEXT while"))
 PY
 sync >/dev/null
 ! grep -q 'STALE TEXT' "$TMP/real.md"                          || fail "stale block not refreshed"
-[ "$(count 'opus-codex-flow:begin' "$TMP/real.md")" -eq 1 ]    || fail "block duplicated on refresh"
+[ "$(count 'claude-codex-flow:begin' "$TMP/real.md")" -eq 1 ]    || fail "block duplicated on refresh"
 
 # remove restores the file and sync does not bring it back
 sync remove >/dev/null
-! grep -q 'opus-codex-flow' "$TMP/real.md"                     || fail "remove left the block"
+! grep -q 'claude-codex-flow' "$TMP/real.md"                     || fail "remove left the block"
 cmp -s "$TMP/real.md" <(printf '# Mine\n\nkeep this\n')         || { cat "$TMP/real.md" >&2; fail "remove did not restore the file"; }
-sync >/dev/null; ! grep -q 'opus-codex-flow' "$TMP/real.md"    || fail "sync re-added a removed block"
-sync add >/dev/null; [ "$(count 'opus-codex-flow:begin' "$TMP/real.md")" -eq 1 ] || fail "add did not add"
+sync >/dev/null; ! grep -q 'claude-codex-flow' "$TMP/real.md"    || fail "sync re-added a removed block"
+sync add >/dev/null; [ "$(count 'claude-codex-flow:begin' "$TMP/real.md")" -eq 1 ] || fail "add did not add"
 sync remove >/dev/null
 
-# opt-out
-sync add >/dev/null; OPUS_CODEX_FLOW_NO_CLAUDE_MD=1 sync >/dev/null
+# a block written under the former name is migrated in place, not duplicated
+printf 'top\n<!-- opus-codex-flow:begin (old) -->\nOLD BODY\n<!-- opus-codex-flow:end -->\nbottom\n' > "$TMP/real.md"
+sync >/dev/null
+! grep -q 'OLD BODY\|opus-codex-flow' "$TMP/real.md"          || fail "legacy block not migrated"
+[ "$(count 'claude-codex-flow:begin' "$TMP/real.md")" -eq 1 ]  || fail "legacy migration: block count"
+[ "$(grep -c '^\(top\|bottom\)$' "$TMP/real.md")" -eq 2 ]       || fail "legacy migration disturbed user text"
 sync remove >/dev/null
-! grep -q 'opus-codex-flow' "$TMP/real.md"                     || fail "opt-out ignored by sync"
+cmp -s "$TMP/real.md" <(printf 'top\nbottom\n')                   || fail "remove after migration"
+
+# opt-out
+sync add >/dev/null; CLAUDE_CODEX_FLOW_NO_CLAUDE_MD=1 sync >/dev/null
+sync remove >/dev/null
+! grep -q 'claude-codex-flow' "$TMP/real.md"                     || fail "opt-out ignored by sync"
 
 # malformed markers: never touch the user's text
 rm "$MD"
 # shellcheck disable=SC2016  # backticks are literal text in these fixtures
 for bad in 'begin-only' 'quoted-inline' 'two-begins' 'end-first'; do
   case $bad in
-    begin-only)    printf 'A\n<!-- opus-codex-flow:begin (x) -->\nkeep 1\nkeep 2\n' ;;
-    quoted-inline) printf 'A `<!-- opus-codex-flow:begin -->` quoted\nkeep 1\nkeep 2\n' ;;
-    two-begins)    printf 'A\n<!-- opus-codex-flow:begin -->\nkeep 1\n<!-- opus-codex-flow:begin -->\nkeep 2\n<!-- opus-codex-flow:end -->\n' ;;
-    end-first)     printf '<!-- opus-codex-flow:end -->\nkeep 1\n<!-- opus-codex-flow:begin -->\nkeep 2\n' ;;
+    begin-only)    printf 'A\n<!-- claude-codex-flow:begin (x) -->\nkeep 1\nkeep 2\n' ;;
+    quoted-inline) printf 'A `<!-- claude-codex-flow:begin -->` quoted\nkeep 1\nkeep 2\n' ;;
+    two-begins)    printf 'A\n<!-- claude-codex-flow:begin -->\nkeep 1\n<!-- claude-codex-flow:begin -->\nkeep 2\n<!-- claude-codex-flow:end -->\n' ;;
+    end-first)     printf '<!-- claude-codex-flow:end -->\nkeep 1\n<!-- claude-codex-flow:begin -->\nkeep 2\n' ;;
   esac > "$MD"
   cp "$MD" "$TMP/before"
   out="$(sync add)"; sync >/dev/null; sync remove >/dev/null || true
@@ -152,11 +161,11 @@ for bad in 'begin-only' 'quoted-inline' 'two-begins' 'end-first'; do
 done
 # a quoted marker with other text on its line is not a marker, so the block is simply added
 # shellcheck disable=SC2016
-printf 'A `<!-- opus-codex-flow:begin -->` quoted\nkeep 1\n' > "$MD"; rm -rf "$CLAUDE_CONFIG_DIR/opus-codex-flow"
+printf 'A `<!-- claude-codex-flow:begin -->` quoted\nkeep 1\n' > "$MD"; rm -rf "$CLAUDE_CONFIG_DIR/claude-codex-flow"
 sync add >/dev/null; sync add >/dev/null
 grep -q 'keep 1' "$MD"                                         || fail "inline-quoted marker lost user text"
 grep -q 'quoted' "$MD"                                         || fail "inline-quoted marker lost user text"
-[ "$(count '^<!-- opus-codex-flow:begin' "$MD")" -eq 1 ]       || fail "inline-quoted case: block count"
+[ "$(count '^<!-- claude-codex-flow:begin' "$MD")" -eq 1 ]       || fail "inline-quoted case: block count"
 
 # CRLF is preserved
 printf 'one\r\ntwo\r\n' > "$MD"
@@ -173,7 +182,7 @@ cat > "$TMP/fake-claude" <<'FAKE'
 #!/usr/bin/env bash
 st="$FAKE_STATE"
 case "$1 $2" in
-  "plugin list") printf '[{"id":"opus-codex-flow@opus-codex-flow","enabled":%s}]\n' "$(cat "$st")";;
+  "plugin list") printf '[{"id":"claude-codex-flow@claude-codex-flow","enabled":%s}]\n' "$(cat "$st")";;
   "plugin enable") echo true > "$st";;
   "plugin disable") echo false > "$st";;
 esac
@@ -181,7 +190,7 @@ FAKE
 chmod +x "$TMP/fake-claude"; export FAKE_STATE="$TMP/fake-state" OCF_CLAUDE_BIN="$TMP/fake-claude"; echo true > "$FAKE_STATE"
 rm -rf "$TMP/cfg2"; mkdir "$TMP/cfg2"; printf '# Mine\n' > "$TMP/cfg2/CLAUDE.md"; export CLAUDE_CONFIG_DIR="$TMP/cfg2"
 TOG="$SCRIPTS/ocf-toggle"
-"$TOG" on >/dev/null;  grep -q 'opus-codex-flow:begin' "$TMP/cfg2/CLAUDE.md" || fail "toggle on: no block"
+"$TOG" on >/dev/null;  grep -q 'claude-codex-flow:begin' "$TMP/cfg2/CLAUDE.md" || fail "toggle on: no block"
 [[ "$("$TOG" status)" == *"plugin: enabled"* ]] || fail "toggle status enabled"
 "$TOG" off >/dev/null; [ "$(cat "$FAKE_STATE")" = false ]                    || fail "toggle off: plugin still enabled"
 cmp -s "$TMP/cfg2/CLAUDE.md" <(printf '# Mine\n')                              || fail "toggle off: file not restored"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Switch opus-codex-flow fully on or off from a terminal (it must work while the plugin is disabled,
+# Switch claude-codex-flow fully on or off from a terminal (it must work while the plugin is disabled,
 # so it is not a slash command).
 #   off     remove the delegation block from the global CLAUDE.md, then disable the plugin:
 #           no skill, agent, hook or block text reaches the context in new sessions.
@@ -9,7 +9,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE="${OCF_CLAUDE_BIN:-claude}"
-PLUGIN="opus-codex-flow@opus-codex-flow"
+PLUGIN="claude-codex-flow@claude-codex-flow"
 CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 sync() { python3 -I "$HERE/sync-claude-md.py" "$1" | python3 -I -c 'import json,sys
 for l in sys.stdin:
@@ -17,11 +17,11 @@ for l in sys.stdin:
     except Exception: print(l, end="")'; }
 enabled() { "$CLAUDE" plugin list --json | python3 -I -c 'import json,sys
 sys.exit(0 if any(p.get("id")=="'"$PLUGIN"'" and p.get("enabled") for p in json.load(sys.stdin)) else 1)'; }
-block() { grep -q '^<!-- opus-codex-flow:begin' "$CFG/CLAUDE.md" 2>/dev/null && echo present || echo absent; }
+block() { grep -Eq '^<!-- (claude|opus)-codex-flow:begin' "$CFG/CLAUDE.md" 2>/dev/null && echo present || echo absent; }
 
 case "${1:-status}" in
-  off) sync remove; enabled && "$CLAUDE" plugin disable "$PLUGIN" >/dev/null; echo "opus-codex-flow: off (new sessions)";;
-  on)  enabled || "$CLAUDE" plugin enable "$PLUGIN" >/dev/null; sync add; echo "opus-codex-flow: on (new sessions)";;
+  off) sync remove; enabled && "$CLAUDE" plugin disable "$PLUGIN" >/dev/null; echo "claude-codex-flow: off (new sessions)";;
+  on)  enabled || "$CLAUDE" plugin enable "$PLUGIN" >/dev/null; sync add; echo "claude-codex-flow: on (new sessions)";;
   status) if enabled; then echo "plugin: enabled"; else echo "plugin: disabled"; fi; echo "CLAUDE.md block: $(block)";;
   *) echo "usage: ocf-toggle on|off|status" >&2; exit 2;;
 esac

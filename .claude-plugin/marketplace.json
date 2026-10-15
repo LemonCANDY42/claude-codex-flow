@@ -1,12 +1,12 @@
 {
-  "name": "opus-codex-flow",
+  "name": "claude-codex-flow",
   "owner": { "name": "LemonCANDY42" },
   "metadata": {
     "description": "Plan with Claude Opus, implement with Codex, review with Opus."
   },
   "plugins": [
     {
-      "name": "opus-codex-flow",
+      "name": "claude-codex-flow",
       "description": "Claude Opus plans and reviews, Codex implements. Taste charter, plan template, a slice runner and a quota check. Includes a SessionStart hook that maintains a delegation block in your global CLAUDE.md.",
       "version": "0.4.0",
       "author": { "name": "LemonCANDY42" },

@@ -2,7 +2,7 @@
 # Smoke test for codex-slice.sh using a fake `codex` binary (no network, no tokens).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RUNNER="$ROOT/skills/opus-codex-flow/scripts/codex-slice.sh"
+RUNNER="$ROOT/skills/claude-codex-flow/scripts/codex-slice.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/bin" "$TMP/indexes" "$TMP/repo/src" "$TMP/repo/.claude/handoff/t"
@@ -77,7 +77,7 @@ grep -qx workspace-write "$FAKE_ARGS"           || fail "sandbox not workspace-w
 grep -qx -- --json "$FAKE_ARGS"                 || fail "--json missing"
 grep -A 1 -x -- --disable "$FAKE_ARGS" | grep -qx hooks || fail "hooks not disabled"
 grep -A 1 -x -- --color "$FAKE_ARGS" | grep -qx never || fail "color not disabled"
-grep -A 1 -x -- --output-schema "$FAKE_ARGS" | grep -qx "$ROOT/skills/opus-codex-flow/report.schema.json" || fail "report schema missing"
+grep -A 1 -x -- --output-schema "$FAKE_ARGS" | grep -qx "$ROOT/skills/claude-codex-flow/report.schema.json" || fail "report schema missing"
 grep -q 'Taste Charter' "$FAKE_STDIN"            || fail "charter not injected"
 grep -q PROJECT-RULE-MARKER "$FAKE_STDIN"        || fail "project taste not injected"
 grep -q 'Implement ONLY slice S1' "$FAKE_STDIN"  || fail "assignment missing"

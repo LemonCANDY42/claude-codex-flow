@@ -1,6 +1,6 @@
 ---
-name: opus-codex-flow
-description: Runs a delegation once you have decided that handing work off clearly pays, and explains how to decide. Opus plans and reviews; Codex implements or scouts taste-light work when its quota is clearly ample; a Claude subagent keeps big raw output out of the main context. The decision rules are short and also live in the user's CLAUDE.md block, so you rarely need to load this skill just to decide. The user can also invoke it with /opus-codex-flow <requirement>. Not for trivial edits, small critical changes, docs or user-facing copy, GUI work, or undecided design.
+name: claude-codex-flow
+description: Runs a delegation once you have decided that handing work off clearly pays, and explains how to decide. Opus plans and reviews; Codex implements or scouts taste-light work when its quota is clearly ample; a Claude subagent keeps big raw output out of the main context. The decision rules are short and also live in the user's CLAUDE.md block, so you rarely need to load this skill just to decide. The user can also invoke it with /claude-codex-flow <requirement>. Not for trivial edits, small critical changes, docs or user-facing copy, GUI work, or undecided design.
 argument-hint: <requirement>
 ---
 
@@ -17,13 +17,13 @@ and the plugin's `digest` agent (Haiku, no edit tools).
 
 Runner path: `${CLAUDE_SKILL_DIR}/scripts/codex-slice.sh`. If that variable is not expanded
 in your session, locate the script with
-`find ~/.claude -path '*opus-codex-flow/scripts/codex-slice.sh' | head -1` and use that path.
+`find ~/.claude -path '*claude-codex-flow/scripts/codex-slice.sh' | head -1` and use that path.
 
 Requirement: $ARGUMENTS (empty when you invoked this skill yourself: the requirement is the task at hand)
 
 If the requirement is exactly `uninstall`: run `python3 "${CLAUDE_SKILL_DIR}/scripts/sync-claude-md.py" remove`,
 report what it printed, add that `ocf-toggle off` (same scripts directory) also disables the plugin and
-`/plugin uninstall opus-codex-flow@opus-codex-flow` removes it, and stop.
+`/plugin uninstall claude-codex-flow@claude-codex-flow` removes it, and stop.
 
 ## 0. Gate (direct work is the default)
 
@@ -134,8 +134,8 @@ stop using subagents for cost reasons in that session.
 
 Write `Model / effort:` on every slice in PLAN.md and pass exactly that to the runner.
 
-The authority is the user's routing file `~/.claude/opus-codex-flow/model-routing.md`.
-Read it before writing a plan. If it does not exist, create it from the default table
+The authority is the user's routing file `~/.claude/claude-codex-flow/model-routing.md`.
+Read it before writing a plan. If it does not exist but the former `~/.claude/opus-codex-flow/model-routing.md` does, copy that file over (keep the original) and use it. Otherwise, create it from the default table
 below, in the user's language, with the same sections: principles, current choices,
 observations, change log.
 
