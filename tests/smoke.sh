@@ -74,6 +74,7 @@ grep -q 'CHANGE SIZE: +3 -2 (budget 1: OVER)' <<<"$OUT" || fail "change budget w
 grep -qx 'm-test' "$FAKE_ARGS"                   || fail "--model not forwarded"
 grep -qx 'model_reasoning_effort="low"' "$FAKE_ARGS" || fail "--effort not forwarded"
 grep -qx workspace-write "$FAKE_ARGS"           || fail "sandbox not workspace-write"
+! grep -q network_access "$FAKE_ARGS"           || fail "network on without --network"
 grep -qx -- --json "$FAKE_ARGS"                 || fail "--json missing"
 grep -A 1 -x -- --disable "$FAKE_ARGS" | grep -qx hooks || fail "hooks not disabled"
 grep -A 1 -x -- --color "$FAKE_ARGS" | grep -qx never || fail "color not disabled"
@@ -100,6 +101,9 @@ grep -q FIX-MARKER "$FAKE_STDIN"                || fail "feedback not injected"
 grep -q 'Fix round for slice S1' "$FAKE_STDIN"    || fail "fix assignment missing"
 [ -f .claude/handoff/t/reports/S1.run2.md ]       || fail "run2 report missing"
 grep -q 'CHANGE SIZE: +0 -0' <<<"$OUT"            || fail "unchanged run includes prior work"
+OUT="$("$RUNNER" .claude/handoff/t S1 --model m-test --effort low --feedback "$TMP/fb.md" --network)"
+grep -qx resume "$FAKE_ARGS"                    || fail "--network run did not resume"
+grep -qx 'sandbox_workspace_write.network_access=true' "$FAKE_ARGS" || fail "--network not forwarded on resume"
 
 OUT="$("$RUNNER" .claude/handoff/t S1 --model m-test --effort default --feedback "$TMP/fb.md" --fresh)"
 ! grep -qx resume "$FAKE_ARGS"                  || fail "--fresh resumed"
@@ -107,6 +111,10 @@ OUT="$("$RUNNER" .claude/handoff/t S1 --model m-test --effort default --feedback
 grep -q 'Taste Charter' "$FAKE_STDIN"            || fail "--fresh omitted charter"
 grep -q '# PLAN: t' "$FAKE_STDIN"                || fail "--fresh omitted plan"
 grep -q 'REVIEW FEEDBACK' "$FAKE_STDIN"           || fail "cold feedback not injected"
+OUT="$("$RUNNER" .claude/handoff/t S1 --model m-test --effort low --feedback "$TMP/fb.md" --fresh --network)"
+grep -qx workspace-write "$FAKE_ARGS"           || fail "--network changed the sandbox mode"
+grep -qx 'sandbox_workspace_write.network_access=true' "$FAKE_ARGS" || fail "--network not forwarded"
+grep -q 'network=1' <<<"$OUT"                    || fail "--network not shown in the run line"
 
 export FAKE_EDIT=second
 echo before > src/b.txt
@@ -142,6 +150,8 @@ grep -q 'Review Charter' "$FAKE_STDIN"           || fail "review charter not inj
 grep -q '# PLAN: t' "$FAKE_STDIN"                || fail "review omitted plan"
 grep -q "$(cat .claude/handoff/t/base.sha)" "$FAKE_STDIN" || fail "review omitted base"
 ! grep -qx -- --output-schema "$FAKE_ARGS"      || fail "review used implement schema"
+RC=0; "$RUNNER" .claude/handoff/t R2 --mode review --model m --effort high --network >/dev/null 2>&1 || RC=$?
+[ "$RC" -eq 2 ]                                 || fail "--network accepted outside implement mode"
 RC=0; "$RUNNER" .claude/handoff/scout R1 --mode review --model m --effort high >/dev/null 2>&1 || RC=$?
 [ "$RC" -eq 3 ]                                 || fail "review without PLAN/base not rejected"
 
