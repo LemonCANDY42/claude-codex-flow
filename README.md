@@ -48,12 +48,13 @@ Small changes are done by Opus directly; see [Delegation policy](#delegation-pol
 
 ```
 codex-slice.sh <handoff-dir> <slice-id> --model M --effort E [--mode implement|scout|review]
-               [--scope "glob,glob"] [--feedback FILE] [--max-lines N] [--fresh] [--repo DIR]
+               [--scope "glob,glob"] [--feedback FILE] [--max-lines N] [--fresh] [--network]
+               [--repo DIR]
 ```
 
-`--model` and `--effort` are required: the plan states them per slice and the script never picks. `--effort default` keeps the model's own default. The choices live in a user-readable file, `~/.claude/claude-codex-flow/model-routing.md`, which Claude creates from the default table in [SKILL.md](skills/claude-codex-flow/SKILL.md) and maintains with a change log: quality first, then cost and speed. `--mode review` runs a read-only independent review of the diff since the recorded base against the plan. Each run writes `reports/<slice>.runN.{md,log,prompt.md}` under the handoff directory. The model slug must exist in your Codex install; check `~/.codex/models_cache.json`.
+`--model` and `--effort` are required: the plan states them per slice and the script never picks. `--effort default` keeps the model's own default. The choices live in a user-readable file, `~/.claude/claude-codex-flow/model-routing.md`, which Claude creates from the default table in [SKILL.md](skills/claude-codex-flow/SKILL.md) and maintains with a change log: quality first, then cost and speed. Claude reads that file before every plan, so it holds only principles, current choices and the change log. The per-slice observations behind those choices are appended to `~/.claude/claude-codex-flow/observations.md`, which is read only when a routing row is being changed; an observations table left in the routing file by an earlier version is moved there once. `--mode review` runs a read-only independent review of the diff since the recorded base against the plan. Each run writes `reports/<slice>.runN.{md,log,prompt.md}` under the handoff directory. The model slug must exist in your Codex install; check `~/.codex/models_cache.json`.
 
-Implement mode is the default and requires `PLAN.md`. Every invocation disables hooks and color and logs JSONL events. The final report is printed as-is and follows [report.schema.json](skills/claude-codex-flow/report.schema.json): `status`, `changed`, `checks`, `deviations`, `questions`, and `noticed`.
+Implement mode is the default and requires `PLAN.md`. Its `workspace-write` sandbox has no network unless you pass `--network`, which sets `sandbox_workspace_write.network_access=true` for that run; use it for a slice that must install packages or call a service. Scout and review reject the flag. Every invocation disables hooks and color and logs JSONL events. The final report is printed as-is and follows [report.schema.json](skills/claude-codex-flow/report.schema.json): `status`, `changed`, `checks`, `deviations`, `questions`, and `noticed`.
 
 The runner saves the thread id to `reports/<slice>.thread`. With `--feedback FILE`, it resumes that thread using only feedback and a short fix assignment. Use `--fresh` to force a cold run with the full prompt plus feedback; a missing thread file also causes a cold run.
 
@@ -62,7 +63,7 @@ Change accounting compares working-tree snapshots before and after each run, inc
 For scout mode, write `<handoff-dir>/<slice-id>.md` with a question and the desired report format and length:
 
 ```bash
-codex-slice.sh .claude/handoff/investigation Q1 --mode scout
+codex-slice.sh .claude/handoff/investigation Q1 --mode scout --model <model> --effort <effort>
 ```
 
 Scout needs no `PLAN.md`, uses a `read-only` sandbox and [scout-charter.md](skills/claude-codex-flow/scout-charter.md), and prints only the report. It has no output schema, scope check, or change accounting. Claims carry `path:line` evidence; builds or tests run only when the question asks for them, and no fixes are proposed.
@@ -79,7 +80,7 @@ Direct work is the default, and the call is meant to be quick: Claude delegates 
 | plus, team, business, enterprise, edu | 60% | 5 points |
 | free, go | never ample | n/a |
 
-It is also `tight` when the short window is at 80% or more or CodexBar projects usage will not last to the reset. In the last quarter of the window, headroom that is about to expire counts for more: when usage is at least 10 points behind pace, the remaining floor drops to 15%. An unrecognised tier, stale window data or a missing CodexBar gives `unknown`. On `tight` or `unknown`, Claude does Codex-eligible work itself unless you invoked the skill or asked for Codex. Tune the tier limits with `CLAUDE_CODEX_FLOW_MIN_REMAINING` and `CLAUDE_CODEX_FLOW_MAX_AHEAD` (percent points).
+It is also `tight` when the short window is at 80% or more or CodexBar projects usage will not last to the reset. In the last quarter of the window, headroom that is about to expire counts for more: when usage is at least 10 points behind pace, the remaining floor drops to 15%. An unrecognised tier, stale window data or a missing CodexBar gives `unknown`. On `tight` or `unknown`, Claude does Codex-eligible work itself unless you invoked the skill or asked for Codex. Tune the tier limits with `CLAUDE_CODEX_FLOW_MIN_REMAINING` and `CLAUDE_CODEX_FLOW_MAX_AHEAD` (percent points). Set `CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=1` to switch off the "will not last to the reset" rule, if you accept running ahead of pace and want only the remaining-share floor to stop Codex work; the projection is still printed with the verdict.
 
 **Claude subagents** are for keeping large raw output out of the main context or running independent questions in parallel. Claude chooses their model and effort by the task; the `digest` agent (Haiku, low effort, no edit tools) is a ready-made cheap option. The reliable gain is context isolation; a price gain from a cheaper model is unverified because subagent model routing has been unreliable in some versions ([anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869)).
 
@@ -118,7 +119,7 @@ When the same issue shows up in two reviews, add a rule instead of repeating the
 
 - Taste is enforced by the charter plus Opus review. Nothing in the sandbox can enforce it.
 - The charter's habit list is a practical heuristic from experience with GPT-family coding agents, not a measured benchmark. Tune it to what you actually see.
-- `workspace-write` has no network. Slices that need installs or network access need you to relax the sandbox deliberately.
+- `workspace-write` has no network by default. A slice that needs installs or network access runs with `--network`; the plan should say so.
 - Codex can lose cross-module wiring on long runs. Keep slices small and check the wiring.
 - No public controlled comparison of "Opus plans + Codex builds" against a single model was found when this was written. Run it on a handful of your own tasks and compare cost and deviation before relying on it.
 
@@ -164,7 +165,8 @@ MIT
 - 计划是文件，不靠对话上下文；行为、接口、兼容性、状态归属等决策都在计划里先定。
 - 实现模式首次运行注入品位章程，禁止过度抽象、防御性兜底、兼容垫片、顺手改无关代码、复述型注释、只靠 mock 的测试、未接线的组件。
 - 每个切片有路径范围和可执行的验收命令，不让模型自评。
-- runner 默认 `--mode implement`，输出 JSON 报告、本轮 diff、增删行数、范围检查和 token 用量；`--max-lines N` 超限标记为 `OVER`，不改变退出码。
+- runner 默认 `--mode implement`，输出 JSON 报告、本轮 diff、增删行数、范围检查和 token 用量；`--max-lines N` 超限标记为 `OVER`，不改变退出码。沙箱默认不联网，切片需要安装依赖或访问服务时加 `--network`（仅实现模式）。
+- 模型与强度的选择写在 `~/.claude/claude-codex-flow/model-routing.md`（原则、当前选择、变更记录），每次规划前读取；每个切片的观察记录追加到同目录的 `observations.md`，只在修改某一行选择、需要依据时才读。
 - `--feedback FILE` 默认续接已保存的线程，只发送反馈和简短任务；`--fresh` 强制重新发送完整提示，没有线程文件时也使用完整提示。
 - `--mode scout` 只需 `<切片编号>.md` 问题文件，不需要 `PLAN.md`；只读调查，仅打印报告，每项结论附 `path:line`，不提出修复方案，除非问题明确要求，否则不运行构建或测试。
 - 本轮改动统计包含未跟踪文件、遵守 `.gitignore`，使用临时 Git index，不改变真实暂存区；此前切片的改动不会被算入本轮范围检查。
@@ -173,7 +175,7 @@ MIT
 
 委派策略：默认直接做，而且要快速判断：只有一眼就划算才委派，拿不准就自己做。判断标准是交接（写计划或任务说明、读报告和 diff、跑验收）是否明显比直接做便宜；这通常出现在工作以反复迭代或批量为主、结果又能写成可运行验收命令的时候。按难度和形态判断，不看行数。Codex 拿品位依赖低的工作：后端逻辑、测试、数据管线、机械改动和大范围只读调查。小而关键的改动、文档与面向用户的文字、图形界面或真机操作、设计未定的工作仍由 Claude 做。两轮返工仍失败或计划越写越长，就由 Claude 接手。唯一来源是 [SKILL.md](skills/claude-codex-flow/SKILL.md) 的 section 0。
 
-额度检查：`scripts/codex-quota.py` 读取 CodexBar，输出 `QUOTA: ample|tight|unknown`，依据订阅档位、周窗口剩余比例和 CodexBar 的节奏（没有节奏数据时用线性估计）。pro 剩余至少 40%、领先节奏不超过 10 个百分点；plus、team 等其他付费档至少 60%、不超过 5 个百分点；free、go 不算富足。短窗口用量达 80%，或 CodexBar 预测额度撑不到重置，也是 `tight`。窗口最后四分之一里，即将过期的富余更值得用：用量落后节奏至少 10 个百分点时，剩余下限降到 15%。档位不认识、窗口数据过期或没有 CodexBar 为 `unknown`。`tight` 或 `unknown` 时 Claude 自己做，除非你手动调用技能或明确要求用 Codex。档位限值可用 `CLAUDE_CODEX_FLOW_MIN_REMAINING`、`CLAUDE_CODEX_FLOW_MAX_AHEAD` 调整。
+额度检查：`scripts/codex-quota.py` 读取 CodexBar，输出 `QUOTA: ample|tight|unknown`，依据订阅档位、周窗口剩余比例和 CodexBar 的节奏（没有节奏数据时用线性估计）。pro 剩余至少 40%、领先节奏不超过 10 个百分点；plus、team 等其他付费档至少 60%、不超过 5 个百分点；free、go 不算富足。短窗口用量达 80%，或 CodexBar 预测额度撑不到重置，也是 `tight`。窗口最后四分之一里，即将过期的富余更值得用：用量落后节奏至少 10 个百分点时，剩余下限降到 15%。档位不认识、窗口数据过期或没有 CodexBar 为 `unknown`。`tight` 或 `unknown` 时 Claude 自己做，除非你手动调用技能或明确要求用 Codex。档位限值可用 `CLAUDE_CODEX_FLOW_MIN_REMAINING`、`CLAUDE_CODEX_FLOW_MAX_AHEAD` 调整。如果你接受用量领先节奏、只想让剩余下限来拦截，可设 `CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=1` 关闭“撑不到重置”这条规则，预测仍会随结论一起打印。
 
 Claude 子代理用于把大段原始输出挡在主上下文之外，或并行跑相互独立的问题；模型和强度由 Claude 按任务自己选，`digest`（Haiku、低强度、无编辑工具）是现成的便宜选项。可靠的收益是隔离上下文；更便宜模型带来的价格收益未验证，因为部分版本的子代理模型路由不可靠（[#43869](https://github.com/anthropics/claude-code/issues/43869)）。
 

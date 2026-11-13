@@ -1,10 +1,10 @@
 ---
 name: claude-codex-flow
-description: Runs a delegation once you have decided that handing work off clearly pays, and explains how to decide. Opus plans and reviews; Codex implements or scouts taste-light work when its quota is clearly ample; a Claude subagent keeps big raw output out of the main context. The decision rules are short and also live in the user's CLAUDE.md block, so you rarely need to load this skill just to decide. The user can also invoke it with /claude-codex-flow <requirement>. Not for trivial edits, small critical changes, docs or user-facing copy, GUI work, or undecided design.
+description: Runs a delegation once you have decided that handing work off clearly pays, and explains how to decide. Claude plans and reviews; Codex implements or scouts taste-light work when its quota is clearly ample; a Claude subagent keeps big raw output out of the main context. The decision rules are short and also live in the user's CLAUDE.md block, so you rarely need to load this skill just to decide. The user can also invoke it with /claude-codex-flow <requirement>. Not for trivial edits, small critical changes, docs or user-facing copy, GUI work, or undecided design.
 argument-hint: <requirement>
 ---
 
-# Opus plans → Codex implements → Opus reviews
+# Claude plans → Codex implements → Claude reviews
 
 You are the planner and reviewer. Codex does the bulk of the typing. Your tokens go to
 decisions, taste, and verification, not to writing code or reading whole files.
@@ -89,12 +89,18 @@ budget means the handoff is losing. Take over and do it directly.
 
 ```bash
 "${CLAUDE_SKILL_DIR}/scripts/codex-slice.sh" .claude/handoff/<slug> S1 \
-  --model gpt-6.1-sol --effort high --scope 'src/foo/*,tests/foo/*' --max-lines 100
+  --model <model> --effort <effort> --scope 'src/foo/*,tests/foo/*' --max-lines 100
 ```
 
+`<model>` and `<effort>` in every command here stand for the slice's `Model / effort:` line
+in PLAN.md, which you take from the routing file (see "Model and effort" below).
+
 - Run with `run_in_background: true` and wait for the completion notice. Do not poll.
-- `--model` and `--effort` are required. Take them from the slice's line in PLAN.md
-  (see "Model and effort" below); the script never chooses for you.
+- `--model` and `--effort` are required; the script never chooses for you.
+- `--network` (implement mode only, off by default) lets the sandboxed run reach the
+  network, for a slice that must install packages or call a service. Use it only when the
+  plan says the slice needs it. Do not call `codex exec` directly to get network access:
+  that skips the charter, the report schema and the scope check.
 - Implement mode (the default) prints the schema-constrained JSON report, this run's
   diff stat and added/deleted line count, a scope check when requested, and token usage.
   `--max-lines N` marks added + deleted lines over N as `OVER`; budget and scope warnings
@@ -109,7 +115,7 @@ in `.claude/handoff/<slug>/Q1.md`, then run:
 
 ```bash
 "${CLAUDE_SKILL_DIR}/scripts/codex-slice.sh" .claude/handoff/<slug> Q1 --mode scout \
-  --model gpt-6.1-sol --effort medium
+  --model <model> --effort <effort>
 ```
 
 Scout requires no PLAN.md, uses `read-only`, and prints only the report. It does not
@@ -135,9 +141,15 @@ stop using subagents for cost reasons in that session.
 Write `Model / effort:` on every slice in PLAN.md and pass exactly that to the runner.
 
 The authority is the user's routing file `~/.claude/claude-codex-flow/model-routing.md`.
-Read it before writing a plan. If it does not exist but the former `~/.claude/opus-codex-flow/model-routing.md` does, copy that file over (keep the original) and use it. Otherwise, create it from the default table
-below, in the user's language, with the same sections: principles, current choices,
-observations, change log.
+Read it before writing a plan. It holds principles, current choices and a change log, and
+stays short because every plan reads it. If it does not exist but the former `~/.claude/opus-codex-flow/model-routing.md` does, copy that file over (keep the original) and use it. Otherwise, create it from the default table
+below, in the user's language, with these sections: principles, current choices, change log.
+
+Slice observations live beside it in `~/.claude/claude-codex-flow/observations.md`, one
+table row per real slice, append-only. Do not read that file when planning; read it only
+when you are changing a routing row and need the evidence. If the routing file still has an
+observations table, move its rows to `observations.md` once and leave a one-line pointer in
+the routing file.
 
 Default table (models available on 2026-10-05):
 
@@ -159,9 +171,11 @@ delegate at all is the quota gate's call (section 0), not a row in this table. W
 `~/.codex/models_cache.json` lists a newer model, or results on real slices contradict a
 row, change the row and add a dated change-log line stating what changed and the evidence
 (fix rounds, plan deviations, review findings, duration, or a checkable public evaluation).
-After each real slice add one line to the observations table, including your own handoff
-overhead against your estimate of doing it directly, so the section 0 thresholds can be tuned. Tell the user in your closing
-report whenever you changed a row.
+After each real slice append one row to `observations.md` (date, repo and slice, model and
+effort, duration, fix rounds, a short result note), including your own handoff overhead
+against your estimate of doing it directly, so the section 0 thresholds can be tuned.
+Append with `cat >>` or `printf >>`; the file does not need to be read first. Tell the user
+in your closing report whenever you changed a routing row.
 
 ## 3. Verify and review
 
@@ -180,7 +194,7 @@ report whenever you changed a row.
 
    ```bash
    "${CLAUDE_SKILL_DIR}/scripts/codex-slice.sh" .claude/handoff/<slug> R1 --mode review \
-     --model gpt-6-astra --effort high
+     --model <review model> --effort <effort>
    ```
 
    It looks for correctness and plan violations. Taste stays your job. Verify each
@@ -190,7 +204,7 @@ report whenever you changed a row.
 
 ```bash
 "${CLAUDE_SKILL_DIR}/scripts/codex-slice.sh" .claude/handoff/<slug> S1 \
-  --model gpt-6.1-sol --effort high --feedback .claude/handoff/<slug>/feedback-S1.md --scope '...'
+  --model <model> --effort <effort> --feedback .claude/handoff/<slug>/feedback-S1.md --scope '...'
 ```
 
 - Maximum 2 fix rounds per slice. After that, either edit the few remaining lines
@@ -216,12 +230,12 @@ report whenever you changed a row.
 - Plan once, precisely; Codex does the long edits and test iteration.
 - Read reports and diffs, not whole files. Don't narrate between steps.
 - No polling, no re-planning after a fix round unless the plan was wrong.
-- Use deterministic commands as the first review gate; spend Opus judgment on the diff.
+- Use deterministic commands as the first review gate; spend your own judgment on the diff.
 
 ## Known limits
 
 - Taste is enforced by the charter and your review, not by Codex's sandbox. Codex can
   still violate a rule; your review is the control.
-- `workspace-write` sandbox has no network. Slices needing installs or network need the
-  user's explicit go-ahead to relax it.
+- The `workspace-write` sandbox has no network by default. A slice that needs installs or
+  network access runs with the runner's `--network` flag; scout and review stay offline.
 - Codex can lose cross-module wiring on long runs; keep slices small and check wiring.

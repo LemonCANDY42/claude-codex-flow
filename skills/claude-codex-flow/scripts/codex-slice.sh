@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# Run ONE plan slice through Codex and print a compact result for the Opus planner.
+# Run ONE plan slice through Codex and print a compact result for the planner.
 #
 # usage: codex-slice.sh <handoff-dir> <slice-id> --model M --effort E [--mode implement|scout|review]
-#                       [--scope "glob,glob"] [--feedback FILE] [--max-lines N] [--fresh] [--repo DIR]
+#                       [--scope "glob,glob"] [--feedback FILE] [--max-lines N] [--fresh] [--network]
+#                       [--repo DIR]
 #
 # Reports are written to <handoff-dir>/reports/. implement and review require PLAN.md (review also
 # the base.sha an implement run recorded); scout requires <slice-id>.md. scout and review are read-only.
 # --model and --effort are required and come from the slice's PLAN; "--effort default" keeps
 # the model's own default. Default mode is implement; approvals are never requested.
+# --network (implement only) gives the workspace-write sandbox network access; the default is none.
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODEL=""; EFFORT=""
-SCOPE=""; FEEDBACK=""; REPO=""; MODE=implement; MAX_LINES=""; FRESH=0
+SCOPE=""; FEEDBACK=""; REPO=""; MODE=implement; MAX_LINES=""; FRESH=0; NETWORK=0
 
-[ $# -ge 2 ] || { sed -n '2,10p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,12p' "$0"; exit 2; }
 HANDOFF="$1"; SLICE="$2"; shift 2
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -23,6 +25,7 @@ while [ $# -gt 0 ]; do
     --feedback) FEEDBACK="$2"; shift 2 ;;
     --max-lines) MAX_LINES="$2"; shift 2 ;;
     --fresh) FRESH=1; shift ;;
+    --network) NETWORK=1; shift ;;
     --model) MODEL="$2"; shift 2 ;;
     --effort) EFFORT="$2"; shift 2 ;;
     --repo) REPO="$2"; shift 2 ;;
@@ -32,6 +35,9 @@ done
 case "$MODE" in implement|scout|review) ;; *) echo "unknown mode: $MODE" >&2; exit 2 ;; esac
 if [ -z "$MODEL" ] || [ -z "$EFFORT" ]; then
   echo "--model and --effort are required; take them from the slice's PLAN" >&2; exit 2
+fi
+if [ "$NETWORK" -eq 1 ] && [ "$MODE" != implement ]; then
+  echo "--network applies to implement mode only; scout and review are read-only" >&2; exit 2
 fi
 if [ -n "$MAX_LINES" ] && [[ ! "$MAX_LINES" =~ ^[0-9]+$ ]]; then
   echo "--max-lines requires a non-negative integer" >&2; exit 2
@@ -110,6 +116,7 @@ if [ "$MODE" = implement ]; then
   else
     ARGS+=(-c 'sandbox_mode="workspace-write"')
   fi
+  if [ "$NETWORK" -eq 1 ]; then ARGS+=(-c 'sandbox_workspace_write.network_access=true'); fi
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
   # Tracked files remain part of the snapshot even when .gitignore matches them.
@@ -121,7 +128,7 @@ else
 fi
 
 if [ "$MODE" = implement ]; then
-  echo "[codex-slice] model=$MODEL effort=$EFFORT slice=$SLICE run=$N resume=$RESUME repo=$REPO"
+  echo "[codex-slice] model=$MODEL effort=$EFFORT slice=$SLICE run=$N resume=$RESUME network=$NETWORK repo=$REPO"
 fi
 set +e
 codex "${ARGS[@]}" - < "$PROMPT" > "$LOG" 2> "$LOG.err"

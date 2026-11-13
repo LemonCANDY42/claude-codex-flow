@@ -42,6 +42,9 @@ PY
 FAKE
 chmod +x "$TMP/bin/codexbar"
 
+# the caller's own overrides must not decide these cases
+unset CLAUDE_CODEX_FLOW_MIN_REMAINING CLAUDE_CODEX_FLOW_MAX_AHEAD CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST \
+  OPUS_CODEX_FLOW_MIN_REMAINING OPUS_CODEX_FLOW_MAX_AHEAD
 quota() { PATH="$TMP/bin:$PATH" python3 -I "$SCRIPTS/codex-quota.py"; }
 expect() { # expect <verdict> <label>
   local out; out="$(quota)"
@@ -76,6 +79,11 @@ out="$(FAKE_USED=75 FAKE_ELAPSED=92 quota)"; grep -q 'floor lowered' <<<"$out" |
 FAKE_USED=20 FAKE_ELAPSED=50 FAKE_PACE=expected FAKE_EXPECTED=5  expect tight "codexbar pace says 15 points ahead"
 FAKE_USED=20 FAKE_ELAPSED=5  FAKE_PACE=expected FAKE_EXPECTED=40 expect ample "codexbar pace says well behind"
 FAKE_USED=20 FAKE_ELAPSED=50 FAKE_PACE=wontlast expect tight "codexbar projects it will not last"
+FAKE_USED=20 FAKE_ELAPSED=50 FAKE_PACE=wontlast CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=1 expect ample "will-not-last rule switched off"
+FAKE_USED=20 FAKE_ELAPSED=50 FAKE_PACE=wontlast CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=0 expect tight "will-not-last override needs 1"
+FAKE_USED=65 FAKE_ELAPSED=60 FAKE_PACE=wontlast CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=1 expect tight "will-not-last off, floor still applies"
+out="$(FAKE_USED=20 FAKE_ELAPSED=50 FAKE_PACE=wontlast CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=1 quota)"
+grep -q 'will not last to the reset (ignored' <<<"$out" || fail "ignored projection not reported as a fact"
 
 # odd data gives unknown, never a traceback
 for mode in garbage dict nowindow stale; do

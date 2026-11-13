@@ -17,7 +17,9 @@ Tier limits (floor = minimum remaining %, MAX_AHEAD = points ahead of pace):
 End of window: in the last quarter, headroom that is about to expire counts for more. When
 usage is at least 10 points behind pace, the floor drops to 15.
 Override the tier's floor and MAX_AHEAD with CLAUDE_CODEX_FLOW_MIN_REMAINING and
-CLAUDE_CODEX_FLOW_MAX_AHEAD (percent points).
+CLAUDE_CODEX_FLOW_MAX_AHEAD (percent points). Set CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=1 to
+skip the "will not last to the reset" rule, for a user who accepts running ahead of pace
+and wants only the floor to stop Codex work; the projection is still printed as a fact.
 """
 import json
 import os
@@ -99,7 +101,10 @@ def assess(entry):
     if short and float(short.get("usedPercent", 0)) >= 80:
         verdict("tight", f"short window {float(short['usedPercent']):.0f}% used", facts)
     if pace.get("willLastToReset") is False:
-        verdict("tight", "CodexBar projects usage will not last to the reset", facts)
+        if os.environ.get("CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST") != "1":
+            verdict("tight", "CodexBar projects usage will not last to the reset", facts)
+        facts.append("CodexBar projects usage will not last to the reset "
+                     "(ignored: CLAUDE_CODEX_FLOW_IGNORE_WILL_LAST=1)")
     if ahead > max_ahead:
         verdict("tight", f"usage runs {ahead:.0f} points ahead of pace (limit {max_ahead:.0f}) for {tier}", facts)
 
